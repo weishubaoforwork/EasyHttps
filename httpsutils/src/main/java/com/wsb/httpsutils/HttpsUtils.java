@@ -2,6 +2,7 @@ package com.wsb.httpsutils;
 
 import android.content.Context;
 
+import java.io.BufferedInputStream;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
@@ -9,8 +10,10 @@ import java.security.KeyManagementException;
 import java.security.KeyStore;
 import java.security.KeyStoreException;
 import java.security.NoSuchAlgorithmException;
+import java.security.NoSuchProviderException;
 import java.security.SecureRandom;
 import java.security.UnrecoverableKeyException;
+import java.security.cert.Certificate;
 import java.security.cert.CertificateException;
 import java.security.cert.CertificateFactory;
 import java.security.cert.X509Certificate;
@@ -171,53 +174,51 @@ public class HttpsUtils {
         }
     }
     //下面是使用自签名证书
-
-
-    //获取证书流
-    private void readHttpsCer(Context context,String string) {
-        try {
-            InputStream is = context.getAssets().open(string);//此处为证书路径
-            NetConfig.addCertificate(is); // 这里将证书读取出来，，放在配置中byte[]里
-        } catch (IOException ioe) {
-            ioe.printStackTrace();
-        }
-    }
-
-    /**
-     * 添加证书
-     *
-     * @param certificates
-     */
-    public static SSLSocketFactory getCERSocketFactory(List<InputStream> certificates) {
+    public static SSLSocketFactory getSSlFactory(Context context,String cername) {
 
         try {
-            CertificateFactory certificateFactory = CertificateFactory.getInstance("X.509");
-            KeyStore keyStore = KeyStore.getInstance(KeyStore.getDefaultType());
-            keyStore.load(null);
+            CertificateFactory cf = CertificateFactory.getInstance("X.509");
+            InputStream caInput = new BufferedInputStream(context.getAssets().open(cername));//把证书打包在asset文件夹中
+            Certificate ca;
             try {
-                for (int i = 0, size = certificates.size(); i < size; ) {
-                    InputStream certificate = certificates.get(i);
-                    String certificateAlias = Integer.toString(i++);
-                    keyStore.setCertificateEntry(certificateAlias, certificateFactory
-                            .generateCertificate(certificate));
-                    if (certificate != null)
-                        certificate.close();
-                }
-            } catch (IOException e) {
-                e.printStackTrace();
+                ca = cf.generateCertificate(caInput);
+
+            } finally {
+                caInput.close();
             }
 
-            SSLContext sslContext = SSLContext.getInstance("TLS");
-            TrustManagerFactory trustManagerFactory =
-                    TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm());
-            trustManagerFactory.init(keyStore);
-            sslContext.init(null, trustManagerFactory.getTrustManagers(), new SecureRandom());
-            return sslContext.getSocketFactory();
-        } catch (Exception e) {
+            // Create a KeyStore containing our trusted CAs
+            String keyStoreType = KeyStore.getDefaultType();
+            KeyStore keyStore = KeyStore.getInstance(keyStoreType);
+            keyStore.load(null, null);
+            keyStore.setCertificateEntry("ca", ca);
+
+            // Create a TrustManager that trusts the CAs in our KeyStore
+            String tmfAlgorithm = TrustManagerFactory.getDefaultAlgorithm();
+            TrustManagerFactory tmf = TrustManagerFactory.getInstance(tmfAlgorithm);
+            tmf.init(keyStore);
+
+            // Create an SSLContext that uses our TrustManager
+            SSLContext s = SSLContext.getInstance("TLSv1", "AndroidOpenSSL");
+            s.init(null, tmf.getTrustManagers(), null);
+
+            return s.getSocketFactory();
+        } catch (CertificateException e) {
+            e.printStackTrace();
+        } catch (IOException e) {
+            e.printStackTrace();
+        } catch (NoSuchAlgorithmException e) {
+            e.printStackTrace();
+        } catch (KeyStoreException e) {
+            e.printStackTrace();
+        } catch (KeyManagementException e) {
+            e.printStackTrace();
+        } catch (NoSuchProviderException e) {
             e.printStackTrace();
         }
         return null;
     }
+
 
 
 
